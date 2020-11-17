@@ -1,4 +1,4 @@
-# Docflow
+# DocFlow
 
 
 You have to have access key id and secret access key available either in ~/.aws/credentials or as environment variables.
