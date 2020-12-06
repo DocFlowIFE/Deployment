@@ -1,0 +1,6 @@
+output:
+	@aws cloudformation describe-stacks \
+			--stack-name ${STACK_NAME} \
+			--region ${REGION} \
+			--output text \
+			--query ' Stacks[].Outputs[].OutputValue'

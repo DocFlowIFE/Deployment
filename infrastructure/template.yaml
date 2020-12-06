@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Template bucket definition
+
+Resources:
+  TemplateBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      Description: >-
+        Bucket for storing compiled templates
+    Properties:
+      AccessControl:
+        Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  TemplateBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref TemplateBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Action: "s3:*"
+          Resource:
+            - !Sub "arn:aws:s3:::${TemplateBucket}"
+            - !Sub "arn:aws:s3:::${TemplateBucket}/*"
+          Principal: '*'
+          Effect: Deny
+          Condition:
+            Bool:
+              "aws:SecureTransport": "false"
+
+Outputs:
+  TemplateBucket:
+    Description: The bucket for storing all the compiled templates
+    Value: !Ref TemplateBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-TemplateBucket"
