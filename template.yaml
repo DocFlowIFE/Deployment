@@ -1,9 +1,74 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  docflow
+  Deploys DocFlow application for managing tickets with messages
 
-  Application for managing tickets with messages
+Parameters:
+  UsersPoolName:
+    Type: String
+    Default: docflow-users
+    Description: |
+      User group name for users.
+  TemplateBucket:
+    Type: String
+    Description: |
+      Template bucket name.
+  TemplateBucketPrefix:
+    Type: String
+    Description: |
+      Prefix for template bucket files.
+  DBName:
+    Description: Database Name
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    Default: docflow
+    AllowedPattern: "^[a-zA-Z]+[0-9a-zA-Z_]*$"
+    ConstraintDescription: Must start with a letter. Only numbers, letters, and _ accepted. max length 64 characters
+
+  DBPort:
+    Description: TCP/IP Port for the Database Instance
+    Type: Number
+    Default: 5432
+    ConstraintDescription: 'Must be in the range [1115-65535]'
+    MinValue: 1115
+    MaxValue: 65535
+
+  DBUsername:
+    Description: Database master username
+    Default: docflow
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: "^[a-zA-Z]+[0-9a-zA-Z_]*$"
+    ConstraintDescription: Must start with a letter. Only numbers, letters, and _ accepted. max length 16 characters
+
+  DBEngineVersion:
+    Description: Database engine version
+    Type: String
+    Default: 5.7.mysql_aurora.2.08.0
+
+  DBInstanceSize:
+    Default: db.t3.small
+    Description: Database instance size.
+    Type: String
+    AllowedValues:
+      - db.t3.small
+      - db.t3.medium
+      - db.r4.large
+      - db.r4.xlarge
+      - db.r4.2xlarge
+      - db.r4.4xlarge
+      - db.r4.8xlarge
+      - db.r4.16xlarge
+      - db.r5.large
+      - db.r5.xlarge
+      - db.r5.2xlarge
+      - db.r5.4xlarge
+      - db.r5.8xlarge
+      - db.r5.12xlarge
+      - db.r5.16xlarge
+      - db.r5.24xlarge
 
 Globals:
   Function:
@@ -12,6 +77,113 @@ Globals:
     Handler: index.handler
 
 Resources:
+  # S3 documents bucket
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      Description: >-
+        Bucket for storing document files
+    Properties:
+      AccessControl:
+        Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # RDS
+  RDSCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: !Ref DBEngineVersion
+      DatabaseName: !Ref DBName
+      Port: !Ref DBPort
+      MasterUsername: !Sub "{{resolve:secretsmanager:${Secret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${Secret}:SecretString:password}}"
+
+  Secret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: Secret for the Aurora database
+      GenerateSecretString:
+        SecretStringTemplate: !Join [ '', [ '{"username": "', !Ref DBUsername, '"}' ] ]
+        GenerateStringKey: "password"
+        ExcludeCharacters: '"@/\'
+        PasswordLength: 32
+  SecretClusterAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      SecretId: !Ref Secret
+      TargetId: !Ref RDSCluster
+      TargetType: AWS::RDS::DBCluster
+
+  DatabaseInstance:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: !Ref DBEngineVersion
+      DBClusterIdentifier: !Ref RDSCluster
+      DBInstanceClass: !Ref DBInstanceSize
+      PubliclyAccessible: false
+
+  # Cognito
+  UserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Ref UsersPoolName
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireNumbers: true
+      Schema:
+        - Name: name
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+
+  UserPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: !Sub ${UsersPoolName}-client
+      GenerateSecret: false
+      UserPoolId: !Ref UserPool
+
+  # API
+  API:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      DefinitionBody:
+        Fn::Transform:
+          Name: AWS::Include
+          Parameters:
+            Location: !Sub "s3://${TemplateBucket}/${TemplateBucketPrefix}/swagger.yaml"
+      Auth:
+        InvokeRole: CALLER_CREDENTIALS
+        AddDefaultAuthorizerToCorsPreflight: true
+        ApiKeyRequired: false
+        DefaultAuthorizer: Docflow-UserAccess
+        Authorizers:
+          Docflow-UserAccess:
+            UserPoolArn: !GetAtt UserPool.Arn
+
+
   CreateDocumentFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -21,6 +193,7 @@ Resources:
         CreateDocument:
           Type: Api
           Properties:
+            RestApiId: !Ref API
             Path: /documents
             Method: post
   GetDocumentFunction:
@@ -32,10 +205,11 @@ Resources:
         GetDocument:
           Type: Api
           Properties:
+            RestApiId: !Ref API
             Path: /documents
             Method: get
 
 Outputs:
   ApiEndpoint:
     Description: "API Gateway endpoint for the API functions"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+    Value: !Sub "https://${API}.execute-api.${AWS::Region}.amazonaws.com/Prod/"

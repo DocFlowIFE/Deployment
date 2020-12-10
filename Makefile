@@ -6,9 +6,13 @@ BUCKET_PREFIX ?= meta
 STACK_NAME ?= docflow-api
 REGION = us-east-1
 
-bucketName := $(shell make -r -s -C ./infrastructure output)
+BUCKET_NAME := $(shell make -r -s -C ./infrastructure output)
 
-OAS_URL = "s3://${bucketName}/${BUCKET_PREFIX}/swagger.yaml"
+OAS_URL = "s3://${BUCKET_NAME}/${BUCKET_PREFIX}/swagger.yaml"
+
+PARAMETER_OVERRIDES = --parameter-overrides \
+    TemplateBucket=$(BUCKET_NAME) \
+    TemplateBucketPrefix=$(BUCKET_PREFIX)
 
 swagger.yaml:
 	@${MAKE} -i -s -C ./infrastructure build
@@ -22,12 +26,13 @@ deploy: swagger.yaml
 	@sam deploy \
 		--stack-name $(STACK_NAME) \
 		--region $(REGION) \
-		--s3-bucket $(bucketName) \
+		--s3-bucket $(BUCKET_NAME) \
 		--s3-prefix $(BUCKET_PREFIX) \
-		--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+		--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+		$(PARAMETER_OVERRIDES)
 
 clean:
-	@aws s3 rm s3://${bucketName}/${BUCKET_PREFIX} --recursive
+	@aws s3 rm s3://${BUCKET_NAME}/${BUCKET_PREFIX} --recursive
 	@aws cloudformation delete-stack --stack-name $(STACK_NAME) --region $(REGION)
 
 local:
