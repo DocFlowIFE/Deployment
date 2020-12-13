@@ -4,18 +4,57 @@ info:
   version: 0.1.9
 
 paths:
-  /document/{documentId}:
-    get:
+  /documents:
+    post:
       tags:
-        - Document
-      description: "Returns a document"
-      parameters:
+        - document
+      description: "Creates or replaces a document"
+      requestBody:
+        $ref: '#/components/requestBodies/DocumentBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+  /documents/{documentId}:
+    parameters:
         - name: "documentId"
-          in: "path"
+          in: path
           required: true
           schema:
-            $ref: '#/components/schemas/DocumentId'
+            type: integer
+            minimum: 1
+    get:
+      tags:
+        - document
+      description: "Returns a link to a given document"
       responses:
+        '200':
+          description: Succeeded
+          content:
+            application/json:
+              schema:
+                description: "Body with the link to the given document"
+                properties:
+                  link:
+                    type: string
+                required:
+                  - link
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+    delete:
+      tags:
+        - document
+      description: "Deletes a document with given id"
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
         '204':
           $ref: '#/components/responses/NoContent'
         '400':
@@ -24,19 +63,266 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-      x-amazon-apigateway-integration:
-        type: "AWS_PROXY"
-        httpMethod: "GET"
-        uri:
-          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetDocumentFunction.Arn}/invocations"
-
+          
+  /ticketTemplates:
+    get:
+      tags:
+        - template
+      description: "Returns all ticket templates"
+      responses:
+        '200':
+          description: Succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                description: "Templates"
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                        description:
+                          type: string
+                        flow:
+                          type: array
+                          items:
+                            type: string
+                      required:
+                        - title
+                        - flow
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+    post:
+      tags:
+        - template
+      description: "Creates a ticket template"
+      requestBody:
+        $ref: '#/components/requestBodies/TemplateBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /ticketTemplates/{templateId}:
+    parameters:
+        - name: "templateId"
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+    get:
+      tags:
+        - template
+      description: "Returns a ticket template"
+      responses:
+        '200':
+          description: Succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                description: "The template"
+                properties:
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  flow:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - title
+                  - flow
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+    delete:
+      tags:
+        - template
+      description: "Deletes a ticket template"
+      responses:
+        
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  
+  /tickets:
+    get:
+      tags:
+        - ticket
+      description: "Returns all tickets"
+      responses:
+        '200':
+          description: Succeeded
+          content:
+           apllication/json:
+              schema:
+                type: object
+                description: "Tickets"
+                properties:
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  flow:
+                    type: array
+                    items:
+                      type: string
+                  stage:
+                    type: integer
+                required:
+                  - title
+                  - flow
+                  - stage
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  
+    post:
+      tags:
+        - ticket
+      description: "Creates or replaces a ticket"
+      requestBody:
+        $ref: '#/components/requestBodies/TicketBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  
+  /tickets/{ticketId}:
+    parameters:
+      - name: "ticketId"
+        in: path
+        required: true
+        schema:
+            type: integer
+            minimum: 1
+    get:
+      tags:
+        - ticket
+      description: "Returns a ticket"
+      responses:
+        '200':
+          description: Succeeded
+          content:
+           apllication/json:
+              schema:
+                type: object
+                description: "The ticket"
+                properties:
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  flow:
+                    type: array
+                    items:
+                      type: string
+                  stage:
+                    type: integer
+                required:
+                  - title
+                  - flow
+                  - stage
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  
 components:
   schemas:
-    DocumentId:
-      description: "ID of the document to return"
-      type: string
-
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          
+  requestBodies:
+    DocumentBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            description: "Body with the link to the given document"
+            properties:
+              link:
+                type: string
+            required:
+              - link
+    TemplateBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            description: "The template"
+            properties:
+              title:
+                type: string
+              description:
+                type: string
+              flow:
+                type: array
+                items:
+                  type: string
+            required:
+              - title
+              - flow
+    TicketBody:
+      required: false
+      content:
+        apllication/json:
+          schema:
+            type: object
+            description: "The ticket"
+            properties:
+              title:
+                type: string
+              description:
+                type: string
+              flow:
+                type: array
+                items:
+                  type: string
+              stage:
+                type: integer
+            required:
+              - title
+              - flow
+              - stage
+      
   responses:
+    Ok:
+      description: Succeeded
+    Created:
+      description: Resource has been successfully created
     NoContent:
       description: Operation successfully completed
     BadRequest:
@@ -44,25 +330,16 @@ components:
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              message:
-                type: string
+            $ref: '#/components/schemas/Error'
     NotFound:
       description: Object not found
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              message:
-                type: string
+            $ref: '#/components/schemas/Error'
     InternalServerError:
       description: Internal Server Error
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              message:
-                type: string
+            $ref: '#/components/schemas/Error'
