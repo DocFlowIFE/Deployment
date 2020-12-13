@@ -16,7 +16,17 @@ paths:
           $ref: '#/components/responses/Created'
         '500':
           $ref: '#/components/responses/InternalServerError'
-    
+    x-amazon-apigateway-integration:
+      uri:
+        Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateDocumentFunction.Arn}/invocations"
+      responses:
+        default:
+          statusCode: "201"
+      passthroughBehavior: "when_no_match"
+      httpMethod: "POST"
+      contentHandling: "CONVERT_TO_TEXT"
+      type: "aws_proxy"
+
   /documents/{documentId}:
     parameters:
         - name: "documentId"
@@ -47,6 +57,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetDocumentFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "GET"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
           
     delete:
       tags:
@@ -63,6 +83,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteDocumentFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "DELETE"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
           
   /ticketTemplates:
     get:
@@ -100,6 +130,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTicketTemplatesFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "GET"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
           
     post:
       tags:
@@ -112,6 +152,16 @@ paths:
           $ref: '#/components/responses/Created'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateTicketTemplateFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
           
   /ticketTemplates/{templateId}:
     parameters:
@@ -151,6 +201,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTicketTemplateFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "GET"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
           
     delete:
       tags:
@@ -166,6 +226,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteTicketTemplateFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "DELETE"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
   
   /tickets:
     get:
@@ -201,6 +271,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTicketsFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "GET"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
   
     post:
       tags:
@@ -213,6 +293,16 @@ paths:
           $ref: '#/components/responses/Created'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateTicketFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "POST"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
   
   /tickets/{ticketId}:
     parameters:
@@ -255,6 +345,16 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetTicketFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        httpMethod: "GET"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
   
 components:
   schemas:

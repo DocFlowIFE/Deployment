@@ -9,6 +9,11 @@ Parameters:
     Default: docflow-users
     Description: |
       User group name for users.
+  AdminPoolName:
+    Type: String
+    Default: docflow-admins
+    Description: |
+      Admin group name for users.
   TemplateBucket:
     Type: String
     Description: |
@@ -143,15 +148,13 @@ Resources:
     Type: "AWS::Cognito::UserPool"
     Properties:
       UserPoolName: !Ref UsersPoolName
+      AutoVerifiedAttributes:
+        - email
       Policies:
         PasswordPolicy:
-          MinimumLength: 12
+          MinimumLength: 6
           RequireNumbers: true
       Schema:
-        - Name: name
-          AttributeDataType: String
-          Mutable: false
-          Required: true
         - Name: email
           AttributeDataType: String
           Mutable: false
@@ -163,53 +166,363 @@ Resources:
       ClientName: !Sub ${UsersPoolName}-client
       GenerateSecret: false
       UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
 
-  # API
-  API:
+  AdminPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Ref AdminPoolName
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireNumbers: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+
+  AdminPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: !Sub ${AdminPoolName}-client
+      GenerateSecret: false
+      UserPoolId: !Ref AdminPool
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+
+  # Admin API
+  AdminAPI:
     Type: AWS::Serverless::Api
     Properties:
       StageName: prod
-      DefinitionBody:
-        Fn::Transform:
-          Name: AWS::Include
-          Parameters:
-            Location: !Sub "s3://${TemplateBucket}/${TemplateBucketPrefix}/swagger.yaml"
       Auth:
         InvokeRole: CALLER_CREDENTIALS
-        AddDefaultAuthorizerToCorsPreflight: true
+        AddDefaultAuthorizerToCorsPreflight: false
+        ApiKeyRequired: false
+        DefaultAuthorizer: Docflow-AdminAccess
+        Authorizers:
+          Docflow-AdminAccess:
+            UserPoolArn: !GetAtt AdminPool.Arn
+
+  CreateTicketTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/CreateTicketTemplate
+      Description: Allows for creating new ticket templates
+      Events:
+        CreateDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AdminAPI
+            Path: /ticketTemplates
+            Method: post
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+  GetTicketTemplatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/GetTicketTemplates
+      Description: Returns all ticket templates
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AdminAPI
+            Path: /ticketTemplates
+            Method: get
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+  GetTicketTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/GetTicketTemplate
+      Description: Returns a specified ticket templates
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AdminAPI
+            Path: /ticketTemplates/{templateId}
+            Method: get
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+  DeleteTicketTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/DeleteTicketTemplate
+      Description: Deletes a specified ticket templates
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AdminAPI
+            Path: /ticketTemplates/{templateId}
+            Method: delete
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+  # public API
+  PublicAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        InvokeRole: CALLER_CREDENTIALS
+        AddDefaultAuthorizerToCorsPreflight: false
         ApiKeyRequired: false
         DefaultAuthorizer: Docflow-UserAccess
         Authorizers:
           Docflow-UserAccess:
             UserPoolArn: !GetAtt UserPool.Arn
-
+          Docflow-AdminAccess:
+            UserPoolArn: !GetAtt AdminPool.Arn
 
   CreateDocumentFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: lambdas/CreateDocument
-      Description: Allows for issuing presigned links to create new documents
+      Description: Creates a new document
       Events:
         CreateDocument:
           Type: Api
           Properties:
-            RestApiId: !Ref API
+            RestApiId: !Ref PublicAPI
             Path: /documents
             Method: post
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+                - "s3:PutObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+
   GetDocumentFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/GetDocuments
-      Description: Allows for issuing presigned links to create new documents
+      CodeUri: lambdas/GetDocument
+      Description: Returns a document
       Events:
         GetDocument:
           Type: Api
           Properties:
-            RestApiId: !Ref API
-            Path: /documents
+            RestApiId: !Ref PublicAPI
+            Path: /documents/{documentId}
             Method: get
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+
+  DeleteDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/DeleteDocument
+      Description: Deletes a document
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PublicAPI
+            Path: /documents/{documentId}
+            Method: delete
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:DeleteObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+
+  CreateTicketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/CreateTicket
+      Description: Creates a new ticket
+      Events:
+        CreateDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PublicAPI
+            Path: /tickets
+            Method: post
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+                - "s3:PutObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+  GetTicketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/GetTicket
+      Description: Returns particular ticket
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PublicAPI
+            Path: /tickets/{ticketId}
+            Method: get
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+                - "s3:PutObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+  GetTicketsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/GetTicket
+      Description: Returns all the tickets of the user
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref PublicAPI
+            Path: /tickets
+            Method: get
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+                - "s3:PutObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+
+
 
 Outputs:
-  ApiEndpoint:
-    Description: "API Gateway endpoint for the API functions"
-    Value: !Sub "https://${API}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  PublicAPIEndpoint:
+    Description: "API Gateway endpoint for the API public functions"
+    Value: !Sub "https://${PublicAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  AdminAPIEndpoint:
+    Description: "API Gateway endpoint for the API admin functions"
+    Value: !Sub "https://${AdminAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  UserPoolId:
+    Description: "User Pool ID"
+    Value: !Ref UserPool
+  UserClientId:
+    Description: "User Pool Client ID"
+    Value: !Ref UserPoolClient
