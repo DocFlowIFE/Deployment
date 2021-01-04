@@ -517,12 +517,18 @@ Outputs:
   PublicAPIEndpoint:
     Description: "API Gateway endpoint for the API public functions"
     Value: !Sub "https://${PublicAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/"
-  AdminAPIEndpoint:
-    Description: "API Gateway endpoint for the API admin functions"
-    Value: !Sub "https://${AdminAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/"
   UserPoolId:
     Description: "User Pool ID"
     Value: !Ref UserPool
   UserClientId:
     Description: "User Pool Client ID"
     Value: !Ref UserPoolClient
+  AdminAPIEndpoint:
+    Description: "API Gateway endpoint for the API admin functions"
+    Value: !Sub "https://${AdminAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  AdminPoolId:
+    Description: "Admin Pool ID"
+    Value: !Ref AdminPool
+  AdminClientId:
+    Description: "Admin Pool Client ID"
+    Value: !Ref AdminPoolClient
