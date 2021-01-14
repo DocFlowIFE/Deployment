@@ -1,4 +1,3 @@
 boto3
 pymysql
-mysql-connector-python
 sqlalchemy

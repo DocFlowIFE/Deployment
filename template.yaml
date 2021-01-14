@@ -22,6 +22,27 @@ Parameters:
     Type: String
     Description: |
       Prefix for template bucket files.
+  VpcCidrBlock:
+    Type: String
+    Default: 192.168.0.0/22
+    Description: |
+      VPC CIDR block
+  PublicSubnet1CidrBlock:
+    Type: String
+    Default: 192.168.0.0/24
+    Description: First public subnet CIDR block from first availability zone
+  PublicSubnet2CidrBlock:
+    Type: String
+    Default: 192.168.1.0/24
+    Description: Second public subnet CIDR block from second availability zone
+  PrivateSubnet1CidrBlock:
+    Description: First private subnet CIDR block from first availability zone
+    Type: String
+    Default: 192.168.2.0/24
+  PrivateSubnet2CidrBlock:
+    Description: Second private subnet CIDR block from second availability zone
+    Type: String
+    Default: 192.168.3.0/24
   DBName:
     Description: Database Name
     Type: String
@@ -80,6 +101,12 @@ Globals:
     Runtime: python3.8
     Timeout: 30
     Handler: index.handler
+    VpcConfig:
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
 
 Resources:
   # S3 documents bucket
@@ -102,6 +129,14 @@ Resources:
               SSEAlgorithm: AES256
 
   # RDS
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
   RDSCluster:
     Type: AWS::RDS::DBCluster
     DeletionPolicy: Delete
@@ -113,6 +148,8 @@ Resources:
       Port: !Ref DBPort
       MasterUsername: !Sub "{{resolve:secretsmanager:${Secret}:SecretString:username}}"
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${Secret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds: [!Ref DBSecurityGroup]
 
   Secret:
     Type: AWS::SecretsManager::Secret
@@ -142,6 +179,7 @@ Resources:
       DBClusterIdentifier: !Ref RDSCluster
       DBInstanceClass: !Ref DBInstanceSize
       PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
 
   # Cognito
   UserPool:
@@ -159,6 +197,8 @@ Resources:
           AttributeDataType: String
           Mutable: false
           Required: true
+      LambdaConfig:
+        PostConfirmation: !GetAtt CreateUserFunction.Arn
 
   UserPoolClient:
     Type: "AWS::Cognito::UserPoolClient"
@@ -187,6 +227,8 @@ Resources:
           AttributeDataType: String
           Mutable: false
           Required: true
+      LambdaConfig:
+        PostConfirmation: !GetAtt CreateUserFunction.Arn
 
   AdminPoolClient:
     Type: "AWS::Cognito::UserPoolClient"
@@ -197,6 +239,222 @@ Resources:
       ExplicitAuthFlows:
         - ALLOW_REFRESH_TOKEN_AUTH
         - ALLOW_USER_PASSWORD_AUTH
+
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnet1CidrBlock
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-east-1b
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnet2CidrBlock
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-east-1a
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnet1CidrBlock
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: us-east-1b
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnet2CidrBlock
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: us-east-1a
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Lambda security group
+      VpcId: !Ref VPC
+
+  DBIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS security group
+      VpcId: !Ref VPC
+
+  LambdaVPCElasticNetworkExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns: ["arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"]
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: lambda:PublishVersion
+                Resource: '*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref Secret
+
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.8
+      ContentUri: ./shared
+      Description: Layer for shared code
+
+  CreateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/CreateUser
+      Description: Allows for creating new user after successful registration
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
+
+  LambdaInvocationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt CreateUserFunction.Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
 
   # Admin API
   AdminAPI:
@@ -230,12 +488,24 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Ref Secret
+            - Effect: Allow
+              Action:
+                - "s3:ListBucket"
+              Resource: !GetAtt DocumentBucket.Arn
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+                - "s3:PutObject"
+              Resource: !Sub "${DocumentBucket.Arn}/*"
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   GetTicketTemplatesFunction:
     Type: AWS::Serverless::Function
@@ -255,12 +525,15 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   GetTicketTemplateFunction:
     Type: AWS::Serverless::Function
@@ -280,12 +553,15 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   DeleteTicketTemplateFunction:
     Type: AWS::Serverless::Function
@@ -305,12 +581,15 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   # public API
   PublicAPI:
@@ -352,6 +631,7 @@ Resources:
                 - "s3:GetObject"
                 - "s3:PutObject"
               Resource: !Sub "${DocumentBucket.Arn}/*"
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   GetDocumentFunction:
     Type: AWS::Serverless::Function
@@ -376,6 +656,7 @@ Resources:
               Action:
                 - "s3:GetObject"
               Resource: !Sub "${DocumentBucket.Arn}/*"
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   DeleteDocumentFunction:
     Type: AWS::Serverless::Function
@@ -400,6 +681,7 @@ Resources:
               Action:
                 - "s3:DeleteObject"
               Resource: !Sub "${DocumentBucket.Arn}/*"
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   CreateTicketFunction:
     Type: AWS::Serverless::Function
@@ -425,15 +707,15 @@ Resources:
                 - "s3:GetObject"
                 - "s3:PutObject"
               Resource: !Sub "${DocumentBucket.Arn}/*"
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   GetTicketFunction:
     Type: AWS::Serverless::Function
@@ -463,20 +745,20 @@ Resources:
                 - "s3:GetObject"
                 - "s3:PutObject"
               Resource: !Sub "${DocumentBucket.Arn}/*"
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   GetTicketsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambdas/GetTicket
+      CodeUri: lambdas/GetTickets
       Description: Returns all the tickets of the user
       Events:
         GetDocument:
@@ -501,17 +783,15 @@ Resources:
                 - "s3:GetObject"
                 - "s3:PutObject"
               Resource: !Sub "${DocumentBucket.Arn}/*"
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref Secret
+      Layers:
+        - !Ref SharedLayer
       Environment:
         Variables:
           RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
           RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
-
-
+      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
 Outputs:
   PublicAPIEndpoint:

@@ -19,6 +19,7 @@ swagger.yaml:
 	@aws s3 cp swagger.yaml ${OAS_URL}
 
 build:
+	@rm -rf .aws-sam
 	@sam build --use-container
 
 deploy: swagger.yaml
