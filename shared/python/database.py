@@ -4,7 +4,7 @@ import os
 import boto3
 import sqlalchemy
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Table, ForeignKey, Integer, String
+from sqlalchemy import Column, Table, ForeignKey, Integer, String, ARRAY
 from sqlalchemy.orm import relationship, sessionmaker
 
 DATABASE_NAME = os.environ['RDS_Database']
@@ -12,16 +12,6 @@ RDS_HOST = os.environ['RDS_HOST']
 RDS_PORT = os.environ['RDS_PORT']
 SECRET_ARN = os.environ['RDS_SECRET_ARN']
 Base = declarative_base()
-
-class Document(Base):
-    __tablename__ = 'document'
-    document_id = Column(Integer, primary_key=True)
-    filename = Column(String(100))
-    uploaded_by = Column(Integer)
-
-    # FK one-to-many Ticket-Document
-    ticket_id = Column(Integer, ForeignKey('ticket.ticket_id'))
-
 
 class User(Base):
     __tablename__ = 'user'
@@ -49,14 +39,15 @@ class Ticket(Base):
     __tablename__ = 'ticket'
     ticket_id = Column(Integer, primary_key=True)
 
-    # FK one-to-many Ticket-Document
-    document_id = relationship("Document", backref="ticket")
+    filename = Column(String(100))
 
     # FK many-to-one Ticket-TicketTemplate
     ticket_temp_id = Column(Integer, ForeignKey('ticket_template.ticket_template_id'))
 
     # FK many-to-one Ticket-User
     current_user_id = Column(Integer, ForeignKey('user.user_id'))
+
+    ticket_issuer_id = Column(Integer, ForeignKey('user.user_id'))
 
     date_issued = Column(String(100))
     status = Column(String(100))

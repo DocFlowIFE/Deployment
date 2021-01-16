@@ -10,9 +10,16 @@ logger.info('Before handler')
 def handler(event, context):
     dbs = database.initialize_database()
 
-    user = User(user_id=event['request']['userAttributes']['sub'], email=event['request']['userAttributes']['email'])
+    query = dbs.query(User).filter(User.email == event['request']['userAttributes']['email']).first()
+    print(dbs.query(User).count())
+    if query:
+        print("exists")
+        return event
+    user = User(email=event['request']['userAttributes']['email'])
     dbs.add(user)
+    print("not committed", user.user_id, user.email)
     dbs.commit()
+    print("committed", user.user_id, user.email)
 
     return event
 
