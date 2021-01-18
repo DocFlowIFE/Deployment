@@ -30,6 +30,7 @@ class TicketTemplate(Base):
     ticket_template_id = Column(Integer, primary_key=True)
     tickets = relationship('Ticket', backref="ticket_template")
 
+    title = Column(String(1000))
     filename = Column(String(100))
     description = Column(String(1000))
     users = relationship("User", secondary=user_ticket_templates)

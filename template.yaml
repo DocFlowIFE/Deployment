@@ -126,7 +126,6 @@ Resources:
       AccessControl:
         Private
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
         BlockPublicPolicy: true
       BucketEncryption:
         ServerSideEncryptionConfiguration:
@@ -423,6 +422,37 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref Secret
+              - Effect: Allow
+                Action:
+                  - "*"
+                Resource: !GetAtt DocumentBucket.Arn
+              - Effect: Allow
+                Action:
+                  - "*"
+                Resource: !Sub "${DocumentBucket.Arn}/*"
+
+  LambdaToCognitoVPCElasticNetworkExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns: ["arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"]
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: cognito-idp:ListUsers
+                Resource: !GetAtt AdminPool.Arn
 
   SharedLayer:
     Type: AWS::Serverless::LayerVersion
@@ -482,6 +512,38 @@ Resources:
           Docflow-AdminAccess:
             UserPoolArn: !GetAtt AdminPool.Arn
 
+  GetUsersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambdas/GetUsers
+      Description: Returns all user emails
+      Events:
+        CreateDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AdminAPI
+            Path: /users
+            Method: get
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref Secret
+            - Effect: Allow
+              Action: cognito-idp:ListUsers
+              Resource: !GetAtt AdminPool.Arn
+      Layers:
+        - !Ref SharedLayer
+      Environment:
+        Variables:
+          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
+          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
+          RDS_Database: !Ref DBName
+          RDS_SECRET_ARN: !Ref Secret
+          ADMIN_POOL_ID: !Ref AdminPool
+      Role: !GetAtt LambdaToCognitoVPCElasticNetworkExecutionRole.Arn
+
   CreateTicketTemplateFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -529,7 +591,7 @@ Resources:
         GetDocument:
           Type: Api
           Properties:
-            RestApiId: !Ref AdminAPI
+            RestApiId: !Ref PublicAPI
             Path: /ticketTemplates
             Method: get
       Policies:
@@ -558,62 +620,6 @@ Resources:
           BUCKET_NAME: !Ref DocumentBucket
       Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
-  GetTicketTemplateFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambdas/GetTicketTemplate
-      Description: Returns a specified ticket templates
-      Events:
-        GetDocument:
-          Type: Api
-          Properties:
-            RestApiId: !Ref AdminAPI
-            Path: /ticketTemplates/{templateId}
-            Method: get
-      Policies:
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref Secret
-      Layers:
-        - !Ref SharedLayer
-      Environment:
-        Variables:
-          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
-          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
-          RDS_Database: !Ref DBName
-          RDS_SECRET_ARN: !Ref Secret
-      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
-
-  DeleteTicketTemplateFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambdas/DeleteTicketTemplate
-      Description: Deletes a specified ticket templates
-      Events:
-        GetDocument:
-          Type: Api
-          Properties:
-            RestApiId: !Ref AdminAPI
-            Path: /ticketTemplates/{templateId}
-            Method: delete
-      Policies:
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !Ref Secret
-      Layers:
-        - !Ref SharedLayer
-      Environment:
-        Variables:
-          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
-          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
-          RDS_Database: !Ref DBName
-          RDS_SECRET_ARN: !Ref Secret
-      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
-
   # public API
   PublicAPI:
     Type: AWS::Serverless::Api
@@ -629,82 +635,6 @@ Resources:
             UserPoolArn: !GetAtt UserPool.Arn
           Docflow-AdminAccess:
             UserPoolArn: !GetAtt AdminPool.Arn
-
-  CreateDocumentFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambdas/CreateDocument
-      Description: Creates a new document
-      Events:
-        CreateDocument:
-          Type: Api
-          Properties:
-            RestApiId: !Ref PublicAPI
-            Path: /documents
-            Method: post
-      Policies:
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - "s3:ListBucket"
-              Resource: !GetAtt DocumentBucket.Arn
-            - Effect: Allow
-              Action:
-                - "s3:GetObject"
-                - "s3:PutObject"
-              Resource: !Sub "${DocumentBucket.Arn}/*"
-      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
-
-  GetDocumentFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambdas/GetDocument
-      Description: Returns a document
-      Events:
-        GetDocument:
-          Type: Api
-          Properties:
-            RestApiId: !Ref PublicAPI
-            Path: /documents/{documentId}
-            Method: get
-      Policies:
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - "s3:ListBucket"
-              Resource: !GetAtt DocumentBucket.Arn
-            - Effect: Allow
-              Action:
-                - "s3:GetObject"
-              Resource: !Sub "${DocumentBucket.Arn}/*"
-      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
-
-  DeleteDocumentFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambdas/DeleteDocument
-      Description: Deletes a document
-      Events:
-        GetDocument:
-          Type: Api
-          Properties:
-            RestApiId: !Ref PublicAPI
-            Path: /documents/{documentId}
-            Method: delete
-      Policies:
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - "s3:ListBucket"
-              Resource: !GetAtt DocumentBucket.Arn
-            - Effect: Allow
-              Action:
-                - "s3:DeleteObject"
-              Resource: !Sub "${DocumentBucket.Arn}/*"
-      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   CreateTicketFunction:
     Type: AWS::Serverless::Function
@@ -739,44 +669,6 @@ Resources:
           RDS_Database: !Ref DBName
           RDS_SECRET_ARN: !Ref Secret
           BUCKET_NAME: !Ref DocumentBucket
-      Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
-
-  GetTicketFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambdas/GetTicket
-      Description: Returns particular ticket
-      Events:
-        GetDocument:
-          Type: Api
-          Properties:
-            RestApiId: !Ref PublicAPI
-            Path: /tickets/{ticketId}
-            Method: get
-      Policies:
-        - Version: 2012-10-17
-          Statement:
-            - Effect: Allow
-              Action:
-                - "s3:ListBucket"
-              Resource: !GetAtt DocumentBucket.Arn
-            - Effect: Allow
-              Action:
-                - "s3:GetObject"
-              Resource: !Sub "${DocumentBucket.Arn}/*"
-            - Effect: Allow
-              Action:
-                - "s3:GetObject"
-                - "s3:PutObject"
-              Resource: !Sub "${DocumentBucket.Arn}/*"
-      Layers:
-        - !Ref SharedLayer
-      Environment:
-        Variables:
-          RDS_HOST: !GetAtt RDSCluster.Endpoint.Address
-          RDS_PORT: !GetAtt RDSCluster.Endpoint.Port
-          RDS_Database: !Ref DBName
-          RDS_SECRET_ARN: !Ref Secret
       Role: !GetAtt LambdaVPCElasticNetworkExecutionRole.Arn
 
   UpdateTicketFunction:

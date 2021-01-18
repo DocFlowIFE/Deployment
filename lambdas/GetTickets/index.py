@@ -30,13 +30,15 @@ def handler(event, context):
     for ticket in tickets:
         info = {
             "ticketId": ticket.ticket_id,
+            "ticketTemplateId": ticket.ticket_temp_id,
             "currentUserId": ticket.current_user_id,
             "ticketIssuerId": ticket.ticket_issuer_id,
             "dateIssued": ticket.date_issued,
+            "fileLink": "",
             "status": ticket.status,
             "comment": ticket.comment,
         }
-        key = f"{ticket.ticket_id}.pdf"
+        key = f"userTickets/{ticket.ticket_id}/{ticket.filename}"
         try:
             s3_client.head_object(Bucket=BUCKET_NAME, Key=key)
         except ClientError:
@@ -49,7 +51,6 @@ def handler(event, context):
                                                               ExpiresIn=EXPIRATION_TIME)
             except ClientError as e:
                 logging.error(e)
-                return None
         tickets_info.append(info)
     
     return {

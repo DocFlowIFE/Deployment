@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date
 import json
 import logging
 import os
@@ -24,21 +24,18 @@ def handler(event, context):
     ticket_template = dbs.query(TicketTemplate).filter(TicketTemplate.ticket_template_id == ticket_template_id).first()
     ticket_issuer = dbs.query(User).filter(User.email == ticket_issuer_mail).first()
 
-    print(ticket_template.users[0])
-    print(ticket_template.users[0].user_id)
     ticket = Ticket()
     ticket.ticket_temp_id = ticket_template_id
     ticket.current_user_id = ticket_template.users[0].user_id
     ticket.ticket_issuer_id = ticket_issuer.user_id
-    ticket.date_issued = str(datetime.now())
+    ticket.date_issued = str(date.today())
     ticket.status = 'pending'
     ticket.comment = parameters['comment']
-    print("no commit")
+    ticket.filename = parameters['filename']
     dbs.add(ticket)
     dbs.commit()
-    print("return")
     file_link = s3_client.generate_presigned_post(BUCKET_NAME,
-                                                  f"{ticket.ticket_id}.pdf",
+                                                  f"userTickets/{ticket.ticket_id}/{parameters['filename']}",
                                                   ExpiresIn=3600)
     return {
         "statusCode": 200,

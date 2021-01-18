@@ -24,8 +24,10 @@ def handler(event, context):
             "id": ticket.ticket_template_id,
             "fileLink": s3_client.generate_presigned_url('get_object',
                                                     Params={'Bucket': BUCKET_NAME,
-                                                            'Key': ticket.filename},
+                                                            'Key': f"{ticket.ticket_template_id}/{ticket.filename}"},
                                                     ExpiresIn=EXPIRATION_TIME),
+            "title": ticket.title,
+            "description": ticket.description,
             "users": [user.email for user in ticket.users],
         } for ticket in query]
     except ClientError as e:
